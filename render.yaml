@@ -19,7 +19,7 @@ services:
       - key: EXTENSIONS
         value: "[{\"p\":\"1\",\"m\":\"2\",\"g\":\"שלום אני זיגי שאל אותי כל דבר ובסיום הקש סולמית\",\"x\":\"\"}]"
       - key: MAX_WORDS
-        value: "25"
+        value: "39"
       - key: EXTRA_INSTRUCTION
         value: ""
       - key: GEMINI_API_KEYS
