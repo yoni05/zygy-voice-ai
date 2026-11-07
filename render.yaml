@@ -11,9 +11,9 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: EXT_PATH
-        value: "1"
+        value: "2"
       - key: VOICE
-        value: "Charon"
+        value: "Fenrir"
       - key: TURN_BUDGET_MS
         value: "120000"
       - key: TEXT_MODEL
@@ -23,7 +23,7 @@ services:
       - key: ADMIN_PASSWORD
         value: "1"
       - key: EXTENSIONS
-        value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Charon\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"},{\"p\":\"2\",\"m\":\"11\",\"v\":\"Charon\",\"g\":\"שלום\",\"x\":\"\"}]"
+        value: "[{\"p\":\"2\",\"m\":\"11\",\"v\":\"Fenrir\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"}]"
       - key: MAX_WORDS
         value: "199"
       - key: EXTRA_INSTRUCTION
