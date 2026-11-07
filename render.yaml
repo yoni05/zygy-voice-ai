@@ -4,22 +4,28 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    buildCommand: npm install
+    buildCommand: npm install cors express
     startCommand: node server.js
     healthCheckPath: /
     envVars:
       - key: NODE_VERSION
         value: "22"
       - key: EXT_PATH
-        value: "5"
+        value: "1"
+      - key: VOICE
+        value: "Charon"
+      - key: TURN_BUDGET_MS
+        value: "120000"
       - key: TEXT_MODEL
         value: "gemini-3.6-flash"
       - key: TTS_MODEL
         value: "gemini-3.8-flash-tts"
+      - key: ADMIN_PASSWORD
+        value: "1"
       - key: EXTENSIONS
-        value: "[{\"p\":\"5\",\"m\":\"2\",\"g\":\"שלום אני זיגי שאל אותי כל דבר ובסיום הקש סולמית\",\"x\":\"\"}]"
+        value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Kore\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"}]"
       - key: MAX_WORDS
-        value: "150"
+        value: "199"
       - key: EXTRA_INSTRUCTION
         value: ""
       - key: GEMINI_API_KEYS
