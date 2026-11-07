@@ -23,7 +23,7 @@ services:
       - key: ADMIN_PASSWORD
         value: "1"
       - key: EXTENSIONS
-        value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Kore\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"}]"
+        value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Charon\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"},{\"p\":\"2\",\"m\":\"2\",\"v\":\"Charon\",\"g\":\"שלום\",\"x\":\"\"}]"
       - key: MAX_WORDS
         value: "199"
       - key: EXTRA_INSTRUCTION
