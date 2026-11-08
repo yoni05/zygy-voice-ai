@@ -11,7 +11,7 @@ services:
       - key: NODE_VERSION
         value: "22"
       - key: EXT_PATH
-        value: "3"
+        value: "1/1"
       - key: VOICE
         value: "Kore"
       - key: TURN_BUDGET_MS
@@ -23,7 +23,7 @@ services:
       - key: ADMIN_PASSWORD
         value: "1"
       - key: EXTENSIONS
-        value: "[{\"p\":\"3\",\"m\":\"2\",\"v\":\"Fenrir\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"}]"
+        value: "[{\"p\":\"1/1\",\"m\":\"2\",\"v\":\"Fenrir\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"}]"
       - key: MAX_WORDS
         value: "199"
       - key: EXTRA_INSTRUCTION
