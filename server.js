@@ -9,7 +9,7 @@ app.use(express.urlencoded({ extended: true }));
 const keyList = v => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
 let KEYS = keyList(process.env.GEMINI_API_KEYS);
 let TTS_KEYS = keyList(process.env.GEMINI_TTS_KEYS);
-let GROQ_KEYS = keyList(process.env.GROQ_API_KEY);
+let GROQ_KEYS = keyList(process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Secret1234';
 
 const TEXT_MODEL = process.env.TEXT_MODEL || 'gemini-3.6-flash';
@@ -68,7 +68,7 @@ const MODES = {
 const VOICE_HELP = 'יכולות מיוחדות (חובה לפעול לפיהן): ' +
   '1. לשינוי קול, הוסף בתחילת התשובה [VOICE:Next] או שם קול (Kore, Puck, Charon, Fenrir, Aoede, Zephyr). ' +
   '2. ליצירת מוזיקה הוסף [MUSIC:BPM:NOTE:BEATS,...] (למשל [MUSIC:110:E4:1,G4:1,A4:2]). ' +
-  '3. לחיפוש באינטרנט דרך Groq: המערכת מחוברת למנוע החיפוש של Groq. אם המשתמש מבקש לחפש ברשת או שואל על מידע עדכני (כגון מזג אוויר היום, חדשות, אירועים עכשוויים וכדומה), חל איסור מוחלט לומר "אין לי מידע עדכני" או "אין לי גישה לרשת" — במקום זאת חובה עליך להחזיר אך ורק את התגית [SEARCH:שאילתת החיפוש] (למשל: [SEARCH:מזג האוויר בישראל היום]). ';
+  '3. לחיפוש באינטרנט או מידע עדכני: אין לך גישה לרשת ולכן אם השאלה דורשת מידע עדכני (כמו מזג אוויר היום, שעה, חדשות או אירועים עכשוויים) ואינך יודע אותה, חובה עליך לכתוב אך ורק את התגית: [SEARCH:שאילתת החיפוש] (למשל: [SEARCH:מזג האוויר בישראל היום]). ';
 
 const buildSys = (mode, extra) => 'אתה עוזר קולי בטלפון. ' + (MODES[String(mode)] || MODES['2']) +
   ' ' + VOICE_HELP +
@@ -597,9 +597,9 @@ app.get('/selftest', async (req, res) => {
   await step('מפתחות ג׳מיני להקראה', async () => { if (!TTS_KEYS.length) throw new Error('ריק'); return ' (' + TTS_KEYS.length + ')'; });
   await step('מפתחות Groq לחיפוש', async () => { 
     if (!GROQ_KEYS.length) throw new Error('לא הוגדר מפתח Groq במשתני הסביבה של השרת');
-    const gTest = await groqSearch('מה מזג האוויר בישראל היום', deadline);
+    const gTest = await groqSearch('מה השעה בישראל', deadline);
     if (/לא הצלחתי לשלוף|לא הוגדר/.test(gTest)) throw new Error(gTest);
-    return ' (' + GROQ_KEYS.length + ' מפתחות, תשובת Groq: ' + gTest.slice(0, 45) + '...)';
+    return ' (' + GROQ_KEYS.length + ' מפתחות, חיפוש פעיל)';
   });
   await step('טוקן ימות', async () => { if (!TOKEN || /undefined/.test(TOKEN)) throw new Error('ריק'); });
   await step('ימות: קריאת שלוחה ' + EXT, async () => {
