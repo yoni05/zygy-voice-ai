@@ -13,7 +13,7 @@ services:
       - key: EXT_PATH
         value: "1/1"
       - key: VOICE
-        value: "Kore"
+        value: "Fenrir"
       - key: TURN_BUDGET_MS
         value: "120000"
       - key: TEXT_MODEL
