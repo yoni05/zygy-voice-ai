@@ -23,9 +23,9 @@ services:
       - key: ADMIN_PASSWORD
         value: "1"
       - key: EXTENSIONS
-        value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Fenrir\",\"g\":\"ברוכים הבאים למערכת\",\"x\":\"\"}]"
+        value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Fenrir\",\"g\":\"שלום\",\"x\":\"\"}]"
       - key: MAX_WORDS
-        value: "50"
+        value: "261"
       - key: EXTRA_INSTRUCTION
         value: ""
       - key: GEMINI_API_KEYS
