@@ -65,10 +65,10 @@ const MODES = {
   '10': 'האופי שלך: מסייע באיתור מראי מקומות. עליך לסייע באיתור מקורות בספרות היסוד בלבד: תנ"ך, תלמוד, משנה תורה לרמב"ם ושולחן ערוך. אם אינך ודאי לחלוטין, עליך להשיב: "לא מצאתי מקור מדויק לכך". לעולם אל תמציא מקורות.'
 };
 
-const VOICE_HELP = 'יכולות מיוחדות: ' +
+const VOICE_HELP = 'יכולות מיוחדות (חובה לפעול לפיהן): ' +
   '1. לשינוי קול, הוסף בתחילת התשובה [VOICE:Next] או שם קול (Kore, Puck, Charon, Fenrir, Aoede, Zephyr). ' +
   '2. ליצירת מוזיקה הוסף [MUSIC:BPM:NOTE:BEATS,...] (למשל [MUSIC:110:E4:1,G4:1,A4:2]). ' +
-  '3. לחיפוש באינטרנט: אם המשתמש מבקש לחפש באינטרנט או שואל על מידע עדכני (כגון חדשות, מזג אוויר, שערים או אירועים עכשוויים), אל תענה מתוך ידע מוקדם ואל תאמר שאין לך גישה לרשת — כתוב אך ורק את התגית [SEARCH:שאילתת החיפוש] (למשל: [SEARCH:מזג האוויר בירושלים היום]). ';
+  '3. לחיפוש באינטרנט או מידע עדכני: לעולם אל תאמר "אין לי מידע עדכני", "אין לי גישה לאינטרנט" או "איני יכול לבדוק בזמן אמת"! אם השאלה דורשת מידע עדכני (כמו מזג אוויר היום, שעה, תאריך, חדשות או אירועים עכשוויים) ואינך יודע את התשובה המדויקת, חובה עליך להחזיר אך ורק תגית חיפוש בפורמט: [SEARCH:שאילתת החיפוש] (למשל: [SEARCH:מזג האוויר היום בישראל]). ';
 
 const buildSys = (mode, extra) => 'אתה עוזר קולי בטלפון. ' + (MODES[String(mode)] || MODES['2']) +
   ' ' + VOICE_HELP +
@@ -142,98 +142,131 @@ async function gem(model, body, deadline, pool) {
   throw e;
 }
 
-const PREFERRED_GROQ = [
-  'groq/compound',
-  'groq/compound-mini',
-  'compound-beta',
-  'compound-beta-mini',
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'qwen-qwq-32b'
-];
+const isRefusal = txt => /אין לי גישה|אין לי מידע עדכני|איני יכול לחפש|לא יכול לגשת לאינטרנט|אין באפשרותי לבדוק בזמן אמת|מידע בזמן אמת|as an ai|cannot browse|no real-time/i.test(String(txt || ''));
 
-async function getGroqModels(key, deadline) {
+const WMO_CODES = {
+  0: 'בהיר ונעים', 1: 'בהיר ברובו', 2: 'מעונן חלקית', 3: 'מעונן',
+  45: 'ערפילי', 48: 'ערפילי', 51: 'טפטוף קל', 53: 'טפטוף', 55: 'טפטוף חזק',
+  61: 'גשם קל', 63: 'גשם בינוני', 65: 'גשם חזק', 71: 'שלג קל', 73: 'שלג',
+  80: 'ממטרים קלים', 81: 'ממטרים', 82: 'ממטרים חזקים', 95: 'סופת רעמים'
+};
+
+async function fetchLiveWeather(deadline) {
+  const cities = [
+    { name: 'ירושלים', lat: 31.7683, lon: 35.2137 },
+    { name: 'בני ברק וגוש דן', lat: 32.0849, lon: 34.8352 },
+    { name: 'חיפה והצפון', lat: 32.7940, lon: 34.9896 },
+    { name: 'צפת', lat: 32.9646, lon: 35.4960 },
+    { name: 'באר שבע והדרום', lat: 31.2518, lon: 34.7913 }
+  ];
   try {
-    const r = await http('https://api.groq.com/openai/v1/models', {
-      headers: { 'Authorization': 'Bearer ' + key }
-    }, 8000, deadline);
+    const lats = cities.map(c => c.lat).join(',');
+    const lons = cities.map(c => c.lon).join(',');
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=Asia%2FJerusalem&forecast_days=1`;
+    const r = await http(url, {}, 8000, deadline);
     if (r.ok) {
-      const j = await r.json();
-      const avail = (j.data || []).map(m => m.id).filter(id => !/whisper|tts|guard/i.test(id));
-      const sorted = PREFERRED_GROQ.filter(p => avail.includes(p));
-      for (const a of avail) if (!sorted.includes(a)) sorted.push(a);
-      if (sorted.length) return sorted.slice(0, 5);
+      const data = await r.json();
+      const arr = Array.isArray(data) ? data : [data];
+      const lines = arr.map((item, idx) => {
+        const cName = (cities[idx] || cities[0]).name;
+        const cur = item.current || {};
+        const daily = item.daily || {};
+        const desc = WMO_CODES[cur.weather_code] || 'רגיל לעונה';
+        const maxT = (daily.temperature_2m_max || [])[0];
+        const minT = (daily.temperature_2m_min || [])[0];
+        return `${cName}: כעת ${Math.round(cur.temperature_2m)} מעלות (${desc}), טווח יומי ${Math.round(minT)} עד ${Math.round(maxT)} מעלות`;
+      });
+      return 'נתוני מזג אוויר חיים בישראל נכון לעכשיו: ' + lines.join('. ') + '.';
     }
   } catch (e) {}
-  return PREFERRED_GROQ.slice(0, 5);
+  return '';
+}
+
+async function fetchLiveWebSnippets(query, deadline) {
+  const out = [];
+  if (/מזג אוויר|מזג האוויר|טמפרטורה|גשם|תחזית|מעלות|חם היום|קר היום/.test(query)) {
+    const w = await fetchLiveWeather(deadline);
+    if (w) out.push(w);
+  }
+  try {
+    const rssUrl = 'https://news.google.com/rss/search?q=' + encodeURIComponent(query) + '&hl=he&gl=IL&ceid=IL:he';
+    const r = await http(rssUrl, {}, 8000, deadline);
+    if (r.ok) {
+      const xml = await r.text();
+      const titles = [...xml.matchAll(/<item>[\s\S]*?<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>[\s\S]*?<pubDate>(.*?)<\/pubDate>/g)]
+        .slice(0, 6)
+        .map(m => m[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'") + ' (' + m[2].slice(0, 16) + ')');
+      if (titles.length) out.push('כותרות ודיווחים עדכניים מהרשת: ' + titles.join(' | '));
+    }
+  } catch (e) {}
+  return out.join('\n');
 }
 
 async function geminiWebSearch(query, deadline) {
   const searchPrompt = 'חפש באינטרנט מידע עדכני נכון להיום וענה בעברית בצורה תמציתית, עובדתית וברורה (ללא כוכביות או סימני עיצוב) על השאלה: ' + query;
-  for (const toolDef of [{ googleSearch: {} }, { google_search: {} }]) {
-    try {
-      const res = await gem(TEXT_MODEL, {
-        contents: [{ role: 'user', parts: [{ text: searchPrompt }] }],
-        tools: [toolDef]
-      }, deadline, 'text');
-      const parts = (((res.candidates || [])[0] || {}).content || {}).parts || [];
-      const ans = parts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
-      if (ans) return ans;
-    } catch (e) {
-      if (isBudget(e)) throw e;
+  for (const m of [TEXT_MODEL, 'gemini-2.5-flash', 'gemini-2.0-flash']) {
+    for (const toolDef of [{ googleSearch: {} }, { google_search: {} }]) {
+      try {
+        const res = await gem(m, {
+          contents: [{ role: 'user', parts: [{ text: searchPrompt }] }],
+          tools: [toolDef]
+        }, deadline, 'text');
+        const parts = (((res.candidates || [])[0] || {}).content || {}).parts || [];
+        const ans = parts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
+        if (ans && !isRefusal(ans)) return ans;
+      } catch (e) {
+        if (isBudget(e)) throw e;
+      }
     }
   }
   return '';
 }
 
 async function groqSearch(query, deadline) {
-  let lastErr = '';
+  const liveData = await fetchLiveWebSnippets(query, deadline);
+
   if (GROQ_KEYS.length) {
-    for (let i = 0; i < Math.min(2, GROQ_KEYS.length); i++) {
-      const key = GROQ_KEYS[rot.groq++ % GROQ_KEYS.length];
-      const modelsToTry = await getGroqModels(key, deadline);
-      for (const gModel of modelsToTry) {
-        try {
-          const r = await http('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + key
-            },
-            body: JSON.stringify({
-              model: gModel,
-              messages: [
-                { role: 'system', content: 'בצע חיפוש או השב תשובה עובדתית, תמציתית, ברורה ומדויקת בעברית לשאילתה הבאה (ללא כוכביות או סימני עיצוב).' },
-                { role: 'user', content: String(query) }
-              ]
-            })
-          }, 25000, deadline);
-          if (r.ok) {
-            const j = await r.json();
-            const ans = (((j.choices || [])[0] || {}).message || {}).content;
-            if (ans && !/אין לי גישה לאינטרנט|איני יכול לחפש|as an ai/i.test(ans)) {
-              console.log('Groq search succeeded with model:', gModel);
-              return ans.trim();
-            }
+    const compoundModels = ['groq/compound', 'groq/compound-mini', 'compound-beta', 'compound-beta-mini'];
+    const key = GROQ_KEYS[rot.groq++ % GROQ_KEYS.length];
+    for (const gModel of compoundModels) {
+      try {
+        const r = await http('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + key
+          },
+          body: JSON.stringify({
+            model: gModel,
+            messages: [
+              { role: 'system', content: 'בצע חיפוש באינטרנט והחזר תשובה עובדתית, תמציתית, ברורה ומדויקת בעברית לשאילתה הבאה (ללא כוכביות או סימני עיצוב).' },
+              { role: 'user', content: String(query) + (liveData ? '\nנתוני עזר חיים:\n' + liveData : '') }
+            ]
+          })
+        }, 20000, deadline);
+        if (r.ok) {
+          const j = await r.json();
+          const ans = (((j.choices || [])[0] || {}).message || {}).content;
+          if (ans && !isRefusal(ans)) {
+            console.log('Groq compound search succeeded with model:', gModel);
+            return ans.trim();
           }
-          const errTxt = (await r.text()).slice(0, 150);
-          lastErr = gModel + ' ' + r.status + ' ' + errTxt;
-          if (r.status === 401) break;
-        } catch (e) {
-          if (isBudget(e)) throw e;
-          lastErr = e.message;
         }
+      } catch (e) {
+        if (isBudget(e)) throw e;
       }
     }
-    if (lastErr) console.warn('Groq fallback to Gemini Web Search. Last Groq msg:', lastErr);
   }
 
   const gemAns = await geminiWebSearch(query, deadline);
   if (gemAns) {
     console.log('Gemini Google Search grounding succeeded for:', query);
-    return gemAns;
+    return liveData ? (gemAns + '\n' + liveData) : gemAns;
+  }
+
+  if (liveData) {
+    console.log('Returning direct live data for:', query);
+    return liveData;
   }
 
   return 'לא הצלחתי לשלוף תוצאות חיפוש כרגע.';
@@ -241,30 +274,47 @@ async function groqSearch(query, deadline) {
 
 const THINK = ['minimal', 'low', null];
 let thinkIdx = 0;
+let searchToolMode = 0; // 0: try googleSearch tool, 1: no tool on raw call
 
-async function rawTextGen(body, deadline) {
+async function rawTextGen(body, deadline, withSearchTool) {
   for (;;) {
     const lvl = THINK[thinkIdx];
     const gc = { maxOutputTokens: 1500 };
     if (lvl) gc.thinkingConfig = { thinkingLevel: lvl };
+    const reqBody = { ...body, generationConfig: gc };
+    if (withSearchTool && searchToolMode === 0) {
+      reqBody.tools = [{ googleSearch: {} }];
+    }
     try {
-      return await gem(TEXT_MODEL, { ...body, generationConfig: gc }, deadline, 'text');
+      return await gem(TEXT_MODEL, reqBody, deadline, 'text');
     } catch (e) {
-      if (e.status === 400 && /think/i.test(e.message) && thinkIdx < THINK.length - 1) { thinkIdx++; continue; }
+      if (e.status === 400 && withSearchTool && searchToolMode === 0 && /tool|search/i.test(e.message)) {
+        searchToolMode = 1;
+        continue;
+      }
+      if (e.status === 400 && /think/i.test(e.message) && thinkIdx < THINK.length - 1) {
+        thinkIdx++;
+        continue;
+      }
       throw e;
     }
   }
 }
 
 async function textGen(body, deadline) {
-  let res = await rawTextGen(body, deadline);
+  let res = await rawTextGen(body, deadline, true);
   let parts = (((res.candidates || [])[0] || {}).content || {}).parts || [];
   let text = parts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
 
   const sm = /\[SEARCH:([^\]]+)\]/i.exec(text);
-  if (sm) {
-    const query = sm[1].trim();
-    console.log('Search triggered via tag for query:', query);
+  let query = sm ? sm[1].trim() : '';
+
+  if (!query && isRefusal(text)) {
+    query = 'מזג האוויר והחדשות היום בישראל';
+  }
+
+  if (query) {
+    console.log('Live Search triggered for query:', query);
     const searchResult = await groqSearch(query, deadline);
     
     try {
@@ -274,14 +324,14 @@ async function textGen(body, deadline) {
           {
             role: 'user',
             parts: [{
-              text: 'המשתמש ביקש מידע על: "' + query + '".\nלהלן תוצאות החיפוש שהתקבלו מהרשת:\n' + searchResult + '\n\nנסח מתוך התוצאות תשובה קולית ברורה, טבעית וקצרה בעברית (ללא תגיות SEARCH וללא כוכביות).'
+              text: 'המשתמש שאל על: "' + query + '".\nלהלן המידע העדכני והמדויק שנשלף כעת מהאינטרנט:\n' + searchResult + '\n\nענה למשתמש בעברית תשובה קולית ברורה, טבעית וקצרה על סמך הנתונים הללו בלבד (ללא תגיות SEARCH וללא כוכביות).'
             }]
           }
         ]
-      }, deadline);
+      }, deadline, false);
       const fParts = (((followUp.candidates || [])[0] || {}).content || {}).parts || [];
       const fText = fParts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
-      if (fText) return followUp;
+      if (fText && !isRefusal(fText)) return followUp;
     } catch (e) {
       console.warn('Follow-up summary failed, returning search result directly:', e.message);
     }
@@ -486,8 +536,9 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
       if (s.r) { del(s.r, s.d); s.r = ''; }
       const t1 = Date.now();
 
+      const nowStr = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
       const a = await textGen({
-        systemInstruction: { parts: [{ text: s.sys + ' (הקול הנוכחי: ' + s.v + ')' }] },
+        systemInstruction: { parts: [{ text: s.sys + ' (הזמן הנוכחי בישראל: ' + nowStr + ', הקול הנוכחי: ' + s.v + ')' }] },
         contents: [...s.h.slice(-8), { role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: audio.toString('base64') } }] }]
       }, deadline);
       const parts = (((a.candidates || [])[0] || {}).content || {}).parts || [];
@@ -591,10 +642,10 @@ app.get('/selftest', async (req, res) => {
   const silent = wav(Buffer.alloc(3200), 8000);
   await step('מפתחות ג׳מיני לתמלול', async () => { if (!KEYS.length) throw new Error('ריק'); return ' (' + KEYS.length + ')'; });
   await step('מפתחות ג׳מיני להקראה', async () => { if (!TTS_KEYS.length) throw new Error('ריק'); return ' (' + TTS_KEYS.length + ')'; });
-  await step('מנוע חיפוש ברשת (Groq / Google Search)', async () => { 
+  await step('מנוע חיפוש ומזג אוויר חי', async () => { 
     const gTest = await groqSearch('מה מזג האוויר בישראל היום', deadline);
     if (/לא הצלחתי לשלוף/.test(gTest)) throw new Error(gTest);
-    return ' (חיפוש פעיל: ' + gTest.slice(0, 40) + '...)';
+    return ' (' + gTest.slice(0, 55) + '...)';
   });
   await step('טוקן ימות', async () => { if (!TOKEN || /undefined/.test(TOKEN)) throw new Error('ריק'); });
   await step('ימות: קריאת שלוחה ' + EXT, async () => {
@@ -609,7 +660,7 @@ app.get('/selftest', async (req, res) => {
     if (j.responseStatus !== 'OK') throw new Error('מחיקה: ' + JSON.stringify(j).slice(0, 150));
   });
   await step('ג׳מיני ' + TEXT_MODEL, async () => {
-    const a = await rawTextGen({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: silent.toString('base64') } }, { text: 'אמור אמן' }] }] }, deadline);
+    const a = await rawTextGen({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: silent.toString('base64') } }, { text: 'אמור אמן' }] }] }, deadline, false);
     if (!(((a.candidates || [])[0] || {}).content)) throw new Error('תשובה ריקה');
     return ' (thinking: ' + (THINK[thinkIdx] || 'רגיל') + ')';
   });
