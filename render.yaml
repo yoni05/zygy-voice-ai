@@ -22,17 +22,17 @@ services:
         value: "gemini-3.8-flash-tts"
       - key: ADMIN_PASSWORD
         value: "1"
+      - key: GROQ_API_KEY
+        value: ""
       - key: EXTENSIONS
         value: "[{\"p\":\"1\",\"m\":\"2\",\"v\":\"Fenrir\",\"g\":\"שלום\",\"x\":\"\"}]"
       - key: MAX_WORDS
-        value: "261"
+        value: "199"
       - key: EXTRA_INSTRUCTION
         value: ""
       - key: GEMINI_API_KEYS
         sync: false
       - key: GEMINI_TTS_KEYS
-        sync: false
-      - key: GROQ_API_KEY
         sync: false
       - key: YEMOT_TOKEN
         sync: false
