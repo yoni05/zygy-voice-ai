@@ -11,7 +11,7 @@ let KEYS = keyList(process.env.GEMINI_API_KEYS);
 let TTS_KEYS = keyList(process.env.GEMINI_TTS_KEYS);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Secret1234';
 
-const TEXT_MODEL = process.env.TEXT_MODEL || 'gemini-3.6-flash';
+const TEXT_MODEL = process.env.TEXT_MODEL || 'gemini-1.5-flash';
 const TTS_MODEL = process.env.TTS_MODEL || 'gemini-3.8-flash-tts';
 const VOICE_LIST = ['Kore', 'Puck', 'Charon', 'Fenrir', 'Aoede', 'Zephyr'];
 const DEFAULT_VOICE = VOICE_LIST.includes(process.env.VOICE) ? process.env.VOICE : 'Kore';
@@ -143,7 +143,13 @@ async function textGen(body, deadline) {
     const gc = { maxOutputTokens: 1500 };
     if (lvl) gc.thinkingConfig = { thinkingLevel: lvl };
     try {
-      return await gem(TEXT_MODEL, { ...body, generationConfig: gc }, deadline, 'text');
+      // הוספת יכולת חיפוש מובנית ברשת (Google Search Tool)
+      const reqBody = { 
+        ...body, 
+        generationConfig: gc,
+        tools: [{ googleSearch: {} }] 
+      };
+      return await gem(TEXT_MODEL, reqBody, deadline, 'text');
     } catch (e) {
       if (e.status === 400 && /think/i.test(e.message) && thinkIdx < THINK.length - 1) { thinkIdx++; continue; }
       throw e;
