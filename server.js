@@ -21,49 +21,6 @@ const YM = process.env.YEMOT_BASE || 'https://www.call2all.co.il/ym/api/';
 const GBASE = process.env.GEMINI_BASE || 'https://generativelanguage.googleapis.com/v1beta/models/';
 const BUDGET = Number(process.env.TURN_BUDGET_MS) || 120000;
 const REC_MAX = String(parseInt(process.env.REC_MAX, 10) || 30);
-const ENABLE_SEARCH = process.env.ENABLE_SEARCH === '1';
-
-// --- Function Calling / Tools Definitions ---
-const toolsDefinition = [
-  {
-    functionDeclarations: [
-      {
-        name: "get_current_time",
-        description: "Returns the current server time and date."
-      },
-      {
-        name: "get_random_number",
-        description: "Generates a random number between a minimum and maximum value.",
-        parameters: {
-          type: "OBJECT",
-          properties: {
-            min: { type: "INTEGER", description: "The minimum value" },
-            max: { type: "INTEGER", description: "The maximum value" }
-          },
-          required: ["min", "max"]
-        }
-      }
-    ]
-  }
-];
-
-if (ENABLE_SEARCH) {
-    toolsDefinition.push({ googleSearch: {} });
-}
-
-// Function implementations mapping
-const functionImplementations = {
-  get_current_time: (args) => {
-    return { time: new Date().toISOString() };
-  },
-  get_random_number: (args) => {
-    const min = args.min || 0;
-    const max = args.max || 100;
-    return { result: Math.floor(Math.random() * (max - min + 1)) + min };
-  }
-};
-// ---------------------------------------------
-
 
 app.post('/update-keys', (req, res) => {
   const { admin_password, gemini_api_key, gemini_tts_key } = req.body;
@@ -371,18 +328,6 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
       return res.send('noop=bye');
     }
     const s = calls[id] || (calls[id] = { d: ext.d, m: ext.m, v: ext.v, sys: ext.sys, g: ext.g, n: 0, h: [], p: '', name: '', r: '', t: 0, e: crypto.randomBytes(3).toString('hex') });
-    
-    // --- Hold mechanism handling ---
-    if (q.hold_status === 'ok') {
-      // The user finished listening to the hold message, now we can return the actual answer we generated in the background
-       if (s.pendingAnswer) {
-           const out = s.pendingAnswer;
-           s.pendingAnswer = null;
-           return res.send(out);
-       }
-    }
-    // -------------------------------
-    
     s.t = Date.now();
     const ask = pre => {
       s.n++; s.p = 'Q' + s.e + s.n; s.name = 'q' + s.e + 'n' + s.n;
@@ -392,106 +337,62 @@ app.all(['/yemot', '/yemot/:e'], async (req, res) => {
       const g = (await greetFile(s.d, Date.now() + 4000)) ? 'f-' + s.d + '/greet' : 't-' + s.g;
       return res.send(ask(g));
     }
-    if (!q[s.p] && !q.hold_status) return res.send(ask('t-' + AGAIN));
-    
+    if (!q[s.p]) return res.send(ask('t-' + AGAIN));
     const deadline = T0 + BUDGET;
     const qn = s.name;
-    
-    // Send hold message immediately to Yemot to buy time for processing
-    const holdMsg = 't-אני חושב על זה, בעוד כמה שניות אענה לך';
-    res.send(`read=${holdMsg}=hold_status,no,1,1,7,No,Yes`);
-    
-    // Process the request in the background
-    (async () => {
-        let out;
-        try {
-          const audio = await download(qn, deadline, s.d);
-          del(qn, s.d);
-          if (s.r) { del(s.r, s.d); s.r = ''; }
-          const t1 = Date.now();
-          
-          let reqBody = {
-            systemInstruction: { parts: [{ text: s.sys + ' (הקול הנוכחי: ' + s.v + ')' }] },
-            contents: [...s.h.slice(-8), { role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: audio.toString('base64') } }] }],
-            tools: toolsDefinition
-          };
-          
-          let a = await textGen(reqBody, deadline);
-          let parts = (((a.candidates || [])[0] || {}).content || {}).parts || [];
-          
-          // --- Function Calling Execution Loop ---
-          let functionCall = parts.find(p => p.functionCall);
-          if (functionCall) {
-              const funcName = functionCall.functionCall.name;
-              const funcArgs = functionCall.functionCall.args;
-              let funcResponse = {};
-              
-              if (functionImplementations[funcName]) {
-                  funcResponse = functionImplementations[funcName](funcArgs);
-              }
-              
-              // Add function call and response to history to continue generation
-              reqBody.contents.push({
-                 role: 'model',
-                 parts: [{ functionCall: functionCall.functionCall }]
-              });
-              reqBody.contents.push({
-                  role: 'function',
-                  parts: [{ functionResponse: { name: funcName, response: funcResponse } }]
-              });
-              
-              a = await textGen(reqBody, deadline);
-              parts = (((a.candidates || [])[0] || {}).content || {}).parts || [];
-          }
-          // ----------------------------------------
-          
-          let text = parts.filter(p => !p.thought && p.text).map(p => p.text || '').join('').trim();
-          if (!text) throw new Error('empty answer');
+    let out;
+    try {
+      const audio = await download(qn, deadline, s.d);
+      del(qn, s.d);
+      if (s.r) { del(s.r, s.d); s.r = ''; }
+      const t1 = Date.now();
 
-          let isSong = false;
-          let musicSpec = '';
+      const a = await textGen({
+        systemInstruction: { parts: [{ text: s.sys + ' (הקול הנוכחי: ' + s.v + ')' }] },
+        contents: [...s.h.slice(-8), { role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: audio.toString('base64') } }] }]
+      }, deadline);
+      const parts = (((a.candidates || [])[0] || {}).content || {}).parts || [];
+      let text = parts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
+      if (!text) throw new Error('empty answer');
 
-          const vm = /\[VOICE:([A-Za-z]+)\]/i.exec(text);
-          if (vm) {
-            const reqV = vm[1];
-            if (reqV.toLowerCase() === 'next') { s.v = VOICE_LIST[(VOICE_LIST.indexOf(s.v) + 1) % VOICE_LIST.length]; } 
-            else { const found = VOICE_LIST.find(x => x.toLowerCase() === reqV.toLowerCase()); if (found) s.v = found; else s.v = VOICE_LIST[(VOICE_LIST.indexOf(s.v) + 1) % VOICE_LIST.length]; }
-            text = text.replace(/\[VOICE:[A-Za-z]+\]/gi, '').trim();
-          }
-          if (/\[SONG\]/i.test(text)) { isSong = true; text = text.replace(/\[SONG\]/gi, '').trim(); }
-          const mm = /\[MUSIC:([^\]]+)\]/i.exec(text);
-          if (mm) { musicSpec = mm[1].trim(); text = text.replace(/\[MUSIC:[^\]]+\]/gi, '').trim(); } 
-          else if (s.m === '5') { musicSpec = '110:E4:1,G4:1,A4:2,B4:1,A4:1,G4:2,E4:1,G4:1,A4:1,B4:1,C5:2,B4:2,A4:2,G4:1,F4:1,E4:4'; }
+      let isSong = false;
+      let musicSpec = '';
 
-          const t2 = Date.now();
-          let pcm = null;
-          if (text) { pcm = await tts(text, deadline, s.v, isSong); } 
-          else if (!musicSpec) { pcm = await tts('החלפתי את הקול.', deadline, s.v, false); }
-          if (musicSpec) {
-            const rate = pcm ? (pcm.readUInt32LE(24) || 24000) : 24000;
-            const mWav = synthMusic(musicSpec, rate);
-            pcm = pcm ? concatWav(pcm, mWav) : mWav;
-          }
-          const t3 = Date.now();
-          const rn = 'r' + s.e + 'n' + s.n;
-          await upload(rn, pcm, deadline, s.d);
-          s.r = rn;
-          s.h.push({ role: 'user', parts: [{ text: '[שאלה]' }] }, { role: 'model', parts: [{ text: text || '[ניגון]' }] });
-          if (s.h.length > 12) s.h = s.h.slice(-12);
-          console.log(id, 'turn', s.n, 'ok', 'voice', s.v, 'gemini', t2 - t1, 'tts', t3 - t2, 'total', Date.now() - T0);
-          out = ask('f-' + s.d + '/' + rn);
-        } catch (e) {
-          console.error(id, 'turn', s.n, 'failed after', Date.now() - T0, 'ms:', e.message);
-          del(qn, s.d);
-          out = ask('t-' + ERR);
-        }
-        
-        // Store the final answer so it can be picked up when Yemot calls back after the hold message
-        s.pendingAnswer = out;
-        
-    })();
-    return; // Already sent the hold response
+      const vm = /\[VOICE:([A-Za-z]+)\]/i.exec(text);
+      if (vm) {
+        const reqV = vm[1];
+        if (reqV.toLowerCase() === 'next') { s.v = VOICE_LIST[(VOICE_LIST.indexOf(s.v) + 1) % VOICE_LIST.length]; } 
+        else { const found = VOICE_LIST.find(x => x.toLowerCase() === reqV.toLowerCase()); if (found) s.v = found; else s.v = VOICE_LIST[(VOICE_LIST.indexOf(s.v) + 1) % VOICE_LIST.length]; }
+        text = text.replace(/\[VOICE:[A-Za-z]+\]/gi, '').trim();
+      }
+      if (/\[SONG\]/i.test(text)) { isSong = true; text = text.replace(/\[SONG\]/gi, '').trim(); }
+      const mm = /\[MUSIC:([^\]]+)\]/i.exec(text);
+      if (mm) { musicSpec = mm[1].trim(); text = text.replace(/\[MUSIC:[^\]]+\]/gi, '').trim(); } 
+      else if (s.m === '5') { musicSpec = '110:E4:1,G4:1,A4:2,B4:1,A4:1,G4:2,E4:1,G4:1,A4:1,B4:1,C5:2,B4:2,A4:2,G4:1,F4:1,E4:4'; }
 
+      const t2 = Date.now();
+      let pcm = null;
+      if (text) { pcm = await tts(text, deadline, s.v, isSong); } 
+      else if (!musicSpec) { pcm = await tts('החלפתי את הקול.', deadline, s.v, false); }
+      if (musicSpec) {
+        const rate = pcm ? (pcm.readUInt32LE(24) || 24000) : 24000;
+        const mWav = synthMusic(musicSpec, rate);
+        pcm = pcm ? concatWav(pcm, mWav) : mWav;
+      }
+      const t3 = Date.now();
+      const rn = 'r' + s.e + 'n' + s.n;
+      await upload(rn, pcm, deadline, s.d);
+      s.r = rn;
+      s.h.push({ role: 'user', parts: [{ text: '[שאלה]' }] }, { role: 'model', parts: [{ text: text || '[ניגון]' }] });
+      if (s.h.length > 12) s.h = s.h.slice(-12);
+      console.log(id, 'turn', s.n, 'ok', 'voice', s.v, 'gemini', t2 - t1, 'tts', t3 - t2, 'total', Date.now() - T0);
+      out = ask('f-' + s.d + '/' + rn);
+    } catch (e) {
+      console.error(id, 'turn', s.n, 'failed after', Date.now() - T0, 'ms:', e.message);
+      del(qn, s.d);
+      out = ask('t-' + ERR);
+    }
+    return res.send(out);
   } catch (e) {
     console.error(id, 'fatal', e.message);
     if (!res.headersSent) res.send('id_list_message=t-' + ERR);
@@ -562,9 +463,7 @@ app.get('/selftest', async (req, res) => {
     if (j.responseStatus !== 'OK') throw new Error('מחיקה: ' + JSON.stringify(j).slice(0, 150));
   });
   await step('ג׳מיני ' + TEXT_MODEL, async () => {
-    const reqBody = { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: silent.toString('base64') } }, { text: 'אמור אמן' }] }] };
-    if (ENABLE_SEARCH) reqBody.tools = [{ googleSearch: {} }];
-    const a = await textGen(reqBody, deadline);
+    const a = await textGen({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: silent.toString('base64') } }, { text: 'אמור אמן' }] }] }, deadline);
     if (!(((a.candidates || [])[0] || {}).content)) throw new Error('תשובה ריקה');
     return ' (thinking: ' + (THINK[thinkIdx] || 'רגיל') + ')';
   });
