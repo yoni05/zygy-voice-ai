@@ -12,7 +12,7 @@ let TTS_KEYS = keyList(process.env.GEMINI_TTS_KEYS);
 let GROQ_KEYS = keyList(process.env.GROQ_API_KEY);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Secret1234';
 
-const TEXT_MODEL = process.env.TEXT_MODEL || 'gemini-3.6-flash';
+const TEXT_MODEL = process.env.TEXT_MODEL || 'gemini-1.5-flash';
 const TTS_MODEL = process.env.TTS_MODEL || 'gemini-3.8-flash-tts';
 const VOICE_LIST = ['Kore', 'Puck', 'Charon', 'Fenrir', 'Aoede', 'Zephyr'];
 const DEFAULT_VOICE = VOICE_LIST.includes(process.env.VOICE) ? process.env.VOICE : 'Kore';
@@ -125,7 +125,7 @@ async function groqSearch(query, deadline) {
           'Authorization': 'Bearer ' + key
         },
         body: JSON.stringify({
-          model: 'compound-beta',
+          model: 'llama-3.1-8b-instant', // שינוי המודל למודל Groq נתמך
           messages: [
             { role: 'system', content: 'בצע חיפוש מהיר ברשת והחזר תשובה עובדתית, תמציתית ומדויקת בעברית לשאילתה הבאה.' },
             { role: 'user', content: String(query) }
