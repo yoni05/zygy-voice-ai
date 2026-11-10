@@ -17,9 +17,9 @@ services:
       - key: TURN_BUDGET_MS
         value: "120000"
       - key: TEXT_MODEL
-        value: "gemini-3.6-flash"
+        value: "gemini-2.5-flash"
       - key: TTS_MODEL
-        value: "gemini-3.8-flash-tts"
+        value: "gemini-2.5-flash-preview-tts"
       - key: ADMIN_PASSWORD
         value: "1"
       - key: GROQ_API_KEY
