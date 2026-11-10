@@ -65,7 +65,7 @@ const MODES = {
 const VOICE_HELP = 'יכולות מיוחדות (חובה לפעול לפיהן): ' +
   '1. לשינוי קול, הוסף בתחילת התשובה [VOICE:Next] או שם קול (Kore, Puck, Charon, Fenrir, Aoede, Zephyr). ' +
   '2. ליצירת מוזיקה הוסף [MUSIC:BPM:NOTE:BEATS,...] (למשל [MUSIC:110:E4:1,G4:1,A4:2]). ' +
-  '3. לחיפוש באינטרנט או מידע עדכני בזמן אמת: אין לך גישה ישירה לרשת. לכן, אם השאלה דורשת מידע עדכני או בדיקה בזמן אמת (כגון חדשות היום, מזג אוויר, שעה, תאריך, או כל מידע עכשווי אחר), חובה עליך להחזיר אך ורק את התגית [SEARCH:שאילתת החיפוש] (למשל: [SEARCH:מזג האוויר בירושלים היום] או [SEARCH:חדשות היום בישראל]). אל תתנצל ואל תכתוב שאין לך גישה לרשת - פשוט פלוט את התגית [SEARCH:...]. ';
+  '3. לחיפוש באינטרנט או מידע עדכני בזמן אמת: אין לך גישה ישירה לרשת. לכן, אם השאלה דורשת מידע עדכני או בדיקה בזמן אמת (כגון חדשות היום, מזג אוויר, שעה, תאריך, מידע על שיעורי תורה חדשים, או כל מידע עכשווי אחר), חובה עליך להחזיר אך ורק את התגית [SEARCH:שאילתת החיפוש] (למשל: [SEARCH:השיעור האחרון של הרב מאיר אליהו] או [SEARCH:חדשות היום בישראל]). אל תתנצל ואל תכתוב שאין לך גישה לרשת - פשוט פלוט את התגית [SEARCH:...]. ';
 
 const buildSys = (mode, extra) => 'אתה עוזר קולי בטלפון המדבר בשפה נקייה ומכובדת. ' + (MODES[String(mode)] || MODES['2']) +
   ' ' + VOICE_HELP +
@@ -123,7 +123,7 @@ function cleanXmlText(s) {
     .replace(/\s+/g, ' ').trim();
 }
 
-// 1. שליפת מזג אוויר חי מ-Open-Meteo (ללא צורך במפתח)
+// 1. שליפת מזג אוויר חי מ-Open-Meteo
 async function fetchLiveWeather(query, deadline) {
   const cities = {
     'ירושלים': { lat: 31.7683, lon: 35.2137, name: 'ירושלים' },
@@ -160,7 +160,7 @@ async function fetchLiveWeather(query, deadline) {
   }
 }
 
-// 2. שליפת חדשות ומבזקים בזמן אמת דרך RSS (Google News Israel / Ynet)
+// 2. שליפת חדשות ומבזקים בזמן אמת דרך RSS
 async function fetchLiveNewsRss(query, deadline) {
   try {
     const isGeneralNews = /חדשות|מבזקים|מה קורה היום|עדכונים/.test(query) && query.split(/\s+/).length <= 4;
@@ -212,16 +212,19 @@ async function fetchDuckDuckGo(query, deadline) {
   }
 }
 
-// איסוף נתונים משולב מכל השירותים החיצוניים
+// איסוף נתונים משולב (עם התניות כדי לא למשוך חדשות סתם)
 async function gatherExternalRealtimeData(query, deadline) {
   const nowStr = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem', dateStyle: 'full', timeStyle: 'medium' });
-  const tasks = [
-    fetchLiveNewsRss(query, deadline),
-    fetchDuckDuckGo(query, deadline)
-  ];
+  const tasks = [ fetchDuckDuckGo(query, deadline) ];
+  
+  if (/חדשות|מבזקים|מה קורה|עדכונים/.test(query)) {
+    tasks.push(fetchLiveNewsRss(query, deadline));
+  }
+  
   if (/מזג אוויר|מזג האוויר|טמפרטורה|גשם|תחזית|חם|קר/.test(query)) {
     tasks.unshift(fetchLiveWeather(query, deadline));
   }
+  
   const results = await Promise.all(tasks);
   const combined = results.filter(Boolean).join('\n\n');
   return `זמן נוכחי בישראל: ${nowStr}\n` + (combined || '');
@@ -239,7 +242,6 @@ async function groqSearch(query, deadline) {
 
   const key = GROQ_KEYS[rot.groq++ % GROQ_KEYS.length];
 
-  // שלב א: ניסיון שימוש במודל Compound של Groq (בעל גישה מובנית לרשת) יחד עם המידע החיצוני שנאסף
   for (const cModel of GROQ_COMPOUND_MODELS) {
     try {
       const r = await http('https://api.groq.com/openai/v1/chat/completions', {
@@ -257,7 +259,7 @@ async function groqSearch(query, deadline) {
             },
             {
               role: 'user',
-              content: `שאילתה: ${query}\n\nמידע חי שנאסף משירותים חיצוניים בזמן אמת (ניתן להיעזר בו או להשלים מחיפוש ברשת):\n${externalData}`
+              content: `שאילתה: ${query}\n\nמידע חי שנאסף משירותים חיצוניים בזמן אמת:\n${externalData}`
             }
           ]
         })
@@ -276,7 +278,6 @@ async function groqSearch(query, deadline) {
     }
   }
 
-  // שלב ב: עיבוד המידע החי מהשירותים החיצוניים באמצעות מודל מהיר של Groq (כגון Llama 3.3)
   for (const lModel of GROQ_LLM_MODELS) {
     try {
       const r = await http('https://api.groq.com/openai/v1/chat/completions', {
